@@ -1,0 +1,255 @@
+"""
+Bioinformatics Sequence Analysis Tool
+Optimized and refactored for professional use
+DNA/RNA sequence analysis with alignment, ORF finding, and melting temperature calculations
+"""
+
+import math
+import re
+from collections import deque
+from typing import List, Tuple, Dict
+
+
+# IUPAC Nucleotide Codes:
+# K = G or T, M = A or C, R = A or G, Y = C or T
+# S = C or G, W = A or T, B = C or T or G, V = A or C or G
+# H = A or C or T, D = A or G or T, X or N = A or T or G or C
+
+
+class Seq:
+    """Single DNA sequence analysis and manipulation"""
+
+    DNA_dictionary = {
+        "A": 0, "T": 1, "G": 2, "C": 3, "K": 4, "M": 5, "R": 6, "Y": 7,
+        "S": 8, "W": 9, "B": 10, "V": 11, "H": 12, "D": 13, "X": 14, "N": 14
+    }
+
+    RNA_dictionary = {
+        "A": 0, "U": 1, "G": 2, "C": 3, "K": 4, "M": 5, "R": 6, "Y": 7,
+        "S": 8, "W": 9, "B": 10, "V": 11, "H": 12, "D": 13, "X": 14, "N": 14
+    }
+
+    Show_dict = {v: k for k, v in DNA_dictionary.items()}
+    Show_dict_RNA = {v: k for k, v in RNA_dictionary.items()}
+
+    _COMPLEMENT_MAP = {0: 1, 1: 0, 2: 3, 3: 2, 8: 8, 9: 9}
+
+    _CODON_TO_AA = {
+        "TTT": "F", "TTC": "F", "TTA": "L", "TTG": "L",
+        "CTT": "L", "CTC": "L", "CTA": "L", "CTG": "L",
+        "ATT": "I", "ATC": "I", "ATA": "I", "ATG": "M",
+        "GTT": "V", "GTC": "V", "GTA": "V", "GTG": "V",
+        "TCT": "S", "TCC": "S", "TCA": "S", "TCG": "S",
+        "CCT": "P", "CCC": "P", "CCA": "P", "CCG": "P",
+        "ACT": "T", "ACC": "T", "ACA": "T", "ACG": "T",
+        "GCT": "A", "GCC": "A", "GCA": "A", "GCG": "A", "GCU": "A",
+        "TAT": "Y", "TAC": "Y", "TAA": "__Ochre/Stop", "TAG": "__Amber/Stop",
+        "CAT": "H", "CAC": "H", "CAA": "Q", "CAG": "Q",
+        "AAT": "N", "AAC": "N", "AAA": "K", "AAG": "K",
+        "GAT": "D", "GAC": "D", "GAA": "E", "GAG": "E",
+        "TGT": "C", "TGC": "C", "TGA": "__Opal/Stop", "TGG": "W",
+        "CGT": "R", "CGC": "R", "CGA": "R", "CGG": "R",
+        "AGT": "S", "AGC": "S", "AGA": "R", "AGG": "R",
+        "GGT": "G", "GGC": "G", "GGA": "G", "GGG": "G"
+    }
+
+    def __init__(self, sequence_string: str):
+        """Initialize DNA sequence"""
+        self.sequence_string = sequence_string.upper()
+        self.numerical_Sequence = [self.DNA_dictionary[base] for base in self.sequence_string]
+
+    def __repr__(self) -> str:
+        return str(self.numerical_Sequence)
+
+    def __len__(self) -> int:
+        return len(self.numerical_Sequence)
+
+    def show(self) -> str:
+        """Return string representation of sequence"""
+        return "".join(self.Show_dict[num] for num in self.numerical_Sequence)
+
+    def complementary(self) -> str:
+        """Get complementary DNA strand"""
+        complement = [self._COMPLEMENT_MAP.get(base, base) for base in self.numerical_Sequence]
+        return "".join(self.Show_dict[num] for num in complement)
+
+    def reverse(self) -> str:
+        """Get reverse sequence"""
+        return "".join(self.Show_dict[num] for num in reversed(self.numerical_Sequence))
+
+    def reverse_complementary(self) -> str:
+        """Get reverse complement (3' to 5' direction)"""
+        rev_comp = [self._COMPLEMENT_MAP.get(base, base) for base in reversed(self.numerical_Sequence)]
+        return "".join(self.Show_dict[num] for num in rev_comp)
+
+    def DNAtoRNA(self) -> str:
+        """Convert DNA to RNA (T -> U)"""
+        return "".join(self.Show_dict_RNA[num] for num in self.numerical_Sequence)
+
+    def GCPercentage(self) -> float:
+        """Calculate GC content ratio (0-1)"""
+        guanine = self.numerical_Sequence.count(2)
+        cytosine = self.numerical_Sequence.count(3)
+        total = len(self.numerical_Sequence)
+        return (guanine + cytosine) / total if total > 0 else 0.0
+
+    def primerSlice(self, fromWhere: int, toWhere: int) -> str:
+        """Extract subsequence (1-indexed, inclusive)"""
+        sliced = self.numerical_Sequence[fromWhere - 1:toWhere]
+        return "".join(self.Show_dict[num] for num in sliced)
+
+    @staticmethod
+    def encrypt(string: str, length: int) -> List[str]:
+        """Split sequence into chunks"""
+        return [string[i:i + length] for i in range(0, len(string), length)]
+
+    @staticmethod
+    def comma_adder(string: str, length: int = 3) -> str:
+        """Format sequence with comma separators"""
+        return ','.join(string[i:i + length] for i in range(0, len(string), length))
+
+    def findORFs(self) -> List[Tuple[str, str]]:
+        """Find all Open Reading Frames"""
+        pattern = re.compile(r'(?=(ATG(?:...)*?)(?<=TAG|TGA|TAA))')
+        seq_string = self.show()
+        matches = pattern.findall(seq_string)
+
+        results = []
+        for idx, orf_seq in enumerate(matches, 1):
+            codons = self.encrypt(orf_seq, 3)
+            protein = "".join(self._CODON_TO_AA.get(codon, "X") for codon in codons)
+            results.append((orf_seq, protein))
+
+            print(self.comma_adder(orf_seq))
+            print(f"The Protein Sequence: {protein}")
+            print(f"{'─' * 16} Codon {idx} {'─' * 16}")
+
+        return results
+
+
+class DS:
+    """Dual sequence alignment and melting temperature analysis"""
+
+    DNA_dictionary = {
+        "A": 0, "T": 1, "G": 2, "C": 3, "K": 4, "M": 5, "R": 6, "Y": 7,
+        "S": 8, "W": 9, "B": 10, "V": 11, "H": 12, "D": 13, "X": 14, "N": 14
+    }
+
+    RNA_dictionary = {
+        "A": 0, "U": 1, "G": 2, "C": 3, "K": 4, "M": 5, "R": 6, "Y": 7,
+        "S": 8, "W": 9, "B": 10, "V": 11, "H": 12, "D": 13, "X": 14, "N": 14
+    }
+
+    numericalToChar = {v: k for k, v in DNA_dictionary.items()}
+    numericalToCharRNA = {v: k for k, v in RNA_dictionary.items()}
+
+    _COMPLEMENT_MAP = {0: 1, 1: 0, 2: 3, 3: 2, 8: 8, 9: 9}
+
+    # Thermodynamic parameters (SantaLucia, 1998)
+    _DELTA_H = {
+        "AA": -9.1, "TT": -9.1, "AT": -8.6, "TA": 6.0,
+        "CA": -5.8, "GT": -6.5, "CT": -7.8, "GA": -5.6,
+        "CG": -11.9, "GC": -11.1, "GG": -11.0, "CC": -11.0,
+        "TG": -5.8, "AC": -6.5, "TC": -5.6, "AG": -7.8
+    }
+
+    _DELTA_S = {
+        "AA": -0.0240, "TT": -0.0240, "AT": -0.0239, "TA": -0.0169,
+        "CA": -0.0129, "GT": -0.0173, "CT": -0.0208, "GA": -0.0135,
+        "CG": -0.0278, "GC": -0.0267, "GG": -0.0266, "CC": -0.0266,
+        "TG": -0.0129, "AC": -0.0173, "TC": -0.0135, "AG": -0.0208
+    }
+
+    def __init__(self, sequence_string1: str, sequence_string2: str):
+        """Initialize dual sequences for comparison"""
+        self.sequence_string1 = sequence_string1.upper()
+        self.sequence_string2 = sequence_string2.upper()
+        self.numerical_Sequence1 = [self.DNA_dictionary[b] for b in self.sequence_string1]
+        self.numerical_Sequence2 = [self.DNA_dictionary[b] for b in self.sequence_string2]
+
+    def __repr__(self) -> str:
+        return f"{self.numerical_Sequence1},{self.numerical_Sequence2}"
+
+    def length_diff(self) -> int:
+        """Calculate length difference"""
+        return len(self.numerical_Sequence1) - len(self.numerical_Sequence2)
+
+    def GlobalAlignment(self, match_score: int = 1, mismatch_penalty: int = 2, gap_penalty: int = 3) -> int:
+        """Perform global alignment with scoring"""
+        seq1 = self.numerical_Sequence1
+        seq2 = self.numerical_Sequence2
+
+        matches = 0
+        mismatches = 0
+        min_len = min(len(seq1), len(seq2))
+        gap = abs(len(seq1) - len(seq2))
+
+        print(f"First primer: {seq1}")
+        print(f"Second primer: {seq2}")
+
+        for i in range(min_len):
+            if seq1[i] == seq2[i]:
+                matches += 1
+                print(f"{seq1[i]} == {seq2[i]}")
+            else:
+                mismatches += 1
+                print(f"{seq1[i]} != {seq2[i]}")
+
+        final_score = matches * match_score - mismatches * mismatch_penalty - gap * gap_penalty
+
+        print(f"Match Score: {matches}")
+        print(f"Mismatch Score: {mismatches}")
+        print(f"Gap Penalty: {gap}")
+
+        return final_score
+
+    def complimentary(self) -> List[int]:
+        """Get numerical complement of sequence 1"""
+        return [self._COMPLEMENT_MAP.get(base, base) for base in self.numerical_Sequence1]
+
+    def TMPr(self, concentration: float, salt: float) -> float:
+        """
+        Calculate melting temperature using nearest-neighbor thermodynamics
+
+        Args:
+            concentration: Primer concentration (Molar)
+            salt: Salt (Na+) concentration (Molar)
+
+        Returns:
+            Tm in Celsius
+        """
+        # Generate complement of sequence 1
+        seq1_complement = [self._COMPLEMENT_MAP.get(b, b) for b in self.numerical_Sequence1]
+
+        # Calculate matches with sequence 2
+        min_len = min(len(seq1_complement), len(self.numerical_Sequence2))
+        matched = sum(1 for i in range(min_len) if seq1_complement[i] == self.numerical_Sequence2[i])
+
+        # Mismatch ratio
+        mismatch_ratio = (1 - matched / len(seq1_complement)) * 100 if seq1_complement else 0
+
+        # Convert to string for dinucleotide analysis
+        seq_str = [self.numericalToChar[b] for b in seq1_complement]
+        dinucleotides = [seq_str[i] + seq_str[i + 1] for i in range(len(seq_str) - 1)]
+
+        # Calculate thermodynamic values
+        delta_h = sum(self._DELTA_H.get(dn, 0) for dn in dinucleotides)
+        delta_s = sum(self._DELTA_S.get(dn, 0) for dn in dinucleotides)
+
+        # Constants
+        R = 0.00199  # kcal/(K·mol)
+        A = -0.0108  # kcal/(K·mol)
+
+        # Tm calculation
+        entropy_term = delta_s + R * math.log(concentration / 4) + A
+        tm_kelvin = delta_h / entropy_term if entropy_term != 0 else 0
+        tm_celsius = tm_kelvin - 273.15
+
+        # Corrections
+        salt_correction = 16.6 * math.log10(salt)
+        tm_final = tm_celsius + salt_correction - mismatch_ratio
+
+        print(f"DeltaH: {delta_h:.3f}")
+        print(f"DeltaS: {delta_s:.3f}")
+
+        return round(tm_final, 3)
